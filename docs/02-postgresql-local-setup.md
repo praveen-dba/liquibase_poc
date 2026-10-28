@@ -143,19 +143,21 @@ On a clean database, team A runs 3 changesets and team B runs 2. A later `update
 
 Months are included in calendar order from `db/root-changelog.yaml`. A new file is not picked up just because it sits in the folder. Add an `include` for it.
 
+A file in January 2026 is named `202601<day>.<sequence>_<description>.sql`. The sequence starts at `1` for that day. A second change on the same day is `.2`.
+
 | Team | File | Id | What it does |
 | --- | --- | --- | --- |
-| A | `2026/jan/V1.1__create_users_table.sql` | `V1.1` | `app.users` |
-| A | `2026/jan/V1.2__add_indexes.sql` | `V1.2` | index on `app.users (full_name)` |
-| A | `2026/feb/V2.1__update_user_schema.sql` | `V2.1` | `status` column on `app.users` |
-| B | `2026/jan/V1.1__create_orders_table.sql` | `V1.1` | `app.orders` |
-| B | `2026/feb/V1.2__add_payment_status.sql` | `V1.2` | `payment_status` column on `app.orders` |
+| A | `2026/jan/20260101.1_create_users_table.sql` | `20260101.1` | `app.users` |
+| A | `2026/jan/20260101.2_add_indexes.sql` | `20260101.2` | index on `app.users (full_name)` |
+| A | `2026/feb/20260201.1_update_user_schema.sql` | `20260201.1` | `status` column on `app.users` |
+| B | `2026/jan/20260101.1_create_orders_table.sql` | `20260101.1` | `app.orders` |
+| B | `2026/feb/20260201.1_add_payment_status.sql` | `20260201.1` | `payment_status` column on `app.orders` |
 
 Team B does not reference team A's tables, so either changelog can be applied on its own.
 
 ## 7. Add the next changeset
 
-1. Add a file under that team's month directory, for example `service-team-a/db/2026/mar/V3.1__add_user_phone.sql`. The first line must be `--liquibase formatted sql`.
+1. Add a file under that team's month directory, for example `service-team-a/db/2026/mar/20260301.1_add_user_phone.sql`. The first line must be `--liquibase formatted sql`.
 2. Give it a new id. Do not reuse an id in the same file with the same author.
 3. Write the SQL, a `--comment`, and a `--rollback`.
 4. Include the file at the bottom of that team's `db/root-changelog.yaml`.

@@ -29,19 +29,19 @@ service-team-a/
     ├── root-changelog.yaml
     └── 2026/
         ├── jan/
-        │   ├── V1.1__create_users_table.sql
-        │   └── V1.2__add_indexes.sql
+        │   ├── 20260101.1_create_users_table.sql
+        │   └── 20260101.2_add_indexes.sql
         └── feb/
-            └── V2.1__update_user_schema.sql
+            └── 20260201.1_update_user_schema.sql
 service-team-b/
 ├── liquibase.properties
 └── db/
     ├── root-changelog.yaml
     └── 2026/
         ├── jan/
-        │   └── V1.1__create_orders_table.sql
+        │   └── 20260101.1_create_orders_table.sql
         └── feb/
-            └── V1.2__add_payment_status.sql
+            └── 20260201.1_add_payment_status.sql
 db/init/            roles and schemas created when the volume is first initialized
 db/inspect/         queries for privileges and the tracking tables
 scripts/            start, stop, Liquibase, and psql
@@ -79,7 +79,7 @@ make reset
 
 The tracking tables are created in schema `app`, because that is the first schema on `liquibase_admin`'s search path and the team properties file sets only the table name. On a clean database this produced `app.serviceteama_databasechangelog` and `app.serviceteamb_databasechangelog`.
 
-`appdb` still has the tables from the first changelog, including `app.orders`. Team B's `V1.1__create_orders_table.sql` will fail there until the volume is recreated with `make reset`. The team changelogs were applied successfully on a separate database, `teamdb`, in the same PostgreSQL 16.11 instance.
+`appdb` still has the tables from the first changelog, including `app.orders`. Team B's `20260101.1_create_orders_table.sql` will fail there until the volume is recreated with `make reset`. The team changelogs were applied successfully on a separate database, `teamdb`, in the same PostgreSQL 16.11 instance.
 
 The Makefile calls `scripts/lb.sh`, which sets `JAVA_HOME` and the database URL. A bare `liquibase` in a new terminal will not find Java until `JAVA_HOME` points at Homebrew OpenJDK 21.
 

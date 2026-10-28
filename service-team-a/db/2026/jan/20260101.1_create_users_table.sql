@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset service-team-a:V1.1
+--changeset service-team-a:20260101.1
 --comment: Create the users table.
 CREATE TABLE app.users (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
