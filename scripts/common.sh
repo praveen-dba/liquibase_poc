@@ -20,6 +20,7 @@ export PATH="${JAVA_HOME}/bin:${PATH}"
 export LIQUIBASE_COMMAND_URL="jdbc:postgresql://localhost:${POSTGRES_PORT}/${DATABASE_NAME}"
 export LIQUIBASE_COMMAND_USERNAME="${MIGRATION_USERNAME}"
 export LIQUIBASE_COMMAND_PASSWORD="${MIGRATION_PASSWORD}"
+export LIQUIBASE_SEARCH_PATH="."
 
 liquibase_home() {
   local prg link

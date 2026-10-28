@@ -1,7 +1,0 @@
-databaseChangeLog:
-  - include:
-      file: 2026/jan/V1.1__create_orders_table.sql
-      relativeToChangelogFile: true
-  - include:
-      file: 2026/feb/V1.2__add_payment_status.sql
-      relativeToChangelogFile: true

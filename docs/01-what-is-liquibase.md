@@ -10,7 +10,7 @@ This POC uses Liquibase Community 5.0.4 against PostgreSQL 16.11. The older note
 
 **The same changes run in the same order everywhere.** Development, test, and production each have their own database. They share one changelog. `liquibase update` applies whatever that database has not recorded yet.
 
-**The database remembers what ran.** After a successful update, the tracking table has one row per changeset: id, author, filename, checksum, comment, the Liquibase version that ran it, and a deployment id shared by every changeset in that run. This repo gives each team its own table, `serviceteama_databasechangelog` and `serviceteamb_databasechangelog`, so the teams can share one database without sharing one history. You do not have to infer the schema version from a filename or from whoever last logged into the server.
+**The database remembers what ran.** After a successful update, `liquibase.databasechangelog` has one row per changeset: id, author, filename, checksum, comment, the Liquibase version that ran it, and a deployment id shared by every changeset in that run. You do not have to infer the schema version from a filename or from whoever last logged into the server.
 
 **A second deploy is a no-op.** On this database, the first `update` ran 8 changesets. The next `update` reported `Run: 0`, `Previously run: 8`, and `Database is up to date, no changesets to execute`.
 
@@ -42,12 +42,12 @@ Rollback undoes changesets whose rollback you wrote. It is not a backup. An `INS
 
 Community 5.0.4 does not have a command to roll back one changeset by id. `rollback-one-changeset` is not a command in this build. The Community commands are `rollback-count`, `rollback --tag`, and `rollback-to-date`.
 
-`generate-changelog` can snapshot a database that already exists. It is a starting point for adoption, not the changelog you keep editing. This repo keeps the hand-written files under each team's `db/2026/` directories.
+`generate-changelog` can snapshot a database that already exists. It is a starting point for adoption, not the changelog you keep editing. The snapshot written on this machine used generated ids and described `customers` as it looks now, with the `status` column already included, instead of the original create plus the later `ALTER`. This repo keeps the hand-written files under `changelog/changes/`.
 
 ## How a run works
 
 1. Liquibase connects as `liquibase_admin`.
-2. It creates that team's changelog table and lock table if they are missing. The names come from the team's `liquibase.properties`.
-3. It reads that team's `db/root-changelog.yaml` and compares it with that team's tracking table.
+2. It creates `liquibase.databasechangelog` and `liquibase.databasechangeloglock` if they are missing. On this database, the first `status` created both tables, before any `update`.
+3. It reads the master changelog and compares it with the tracking table.
 4. `update` locks the lock row, runs each missing changeset, inserts a tracking row in the same transaction, then releases the lock.
 5. A later environment runs the same files. Changesets already recorded there are skipped. New ones at the bottom of the changelog are applied.

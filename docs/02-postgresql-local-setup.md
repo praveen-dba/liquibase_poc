@@ -102,23 +102,16 @@ Inspect what was created:
 
 ## 5. Liquibase connection
 
-Each team has its own properties file. `service-team-a/liquibase.properties`:
+`liquibase.properties` holds the values that are safe to commit:
 
 ```properties
-changeLogFile=db/root-changelog.yaml
-databaseChangeLogTableName=serviceteama_databasechangelog
-databaseChangeLogLockTableName=serviceteama_databasechangelock
+changeLogFile=changelog/db.changelog-master.yaml
+searchPath=.
+liquibaseSchemaName=liquibase
+defaultSchemaName=app
+logLevel=INFO
+liquibase.showBanner=false
 ```
-
-`service-team-b/liquibase.properties`:
-
-```properties
-changeLogFile=db/root-changelog.yaml
-databaseChangeLogTableName=serviceteamb_databasechangelog
-databaseChangeLogLockTableName=serviceteamb_databasechangelock
-```
-
-`scripts/lb.sh` runs from the repo root so the JDBC jar in `liquibase_libs/` is found, and passes `--defaults-file` plus `--search-path` for the team you name. The changelog path in the properties file is relative to that team directory.
 
 `scripts/common.sh` adds the connection from `.env`:
 
@@ -129,47 +122,75 @@ username liquibase_admin
 
 Do not export `LIQUIBASE_USERNAME` or `LIQUIBASE_PASSWORD`. Liquibase 5 warns about unknown `LIQUIBASE_*` variables. The script uses `LIQUIBASE_COMMAND_USERNAME` and `LIQUIBASE_COMMAND_PASSWORD`. The `.env` keys are `MIGRATION_USERNAME` and `MIGRATION_PASSWORD`.
 
-The properties file does not set a schema. Liquibase creates the tracking tables in the first schema on `liquibase_admin`'s search path, which the init script sets to `app`. The SQL changesets still qualify application objects with `app.`.
+`liquibaseSchemaName` puts the tracking tables in schema `liquibase`. `defaultSchemaName` is where unqualified structured changes go. The SQL changesets in this repo still qualify every name with `app.`.
 
-## 6. Apply a team's changelog
+## 6. Apply the changelog
 
 ```bash
-make update TEAM=service-team-a
-make update TEAM=service-team-b
-make history TEAM=service-team-a
+make status
+make update-sql
+make update
+make history
 ```
 
-On a clean database, team A runs 3 changesets and team B runs 2. A later `update` for a team that is already applied prints `Database is up to date, no changesets to execute`.
+`status` before the first update listed 8 pending changesets and created the two tracking tables. `update` then ran all 8:
 
-Months are included in calendar order from `db/root-changelog.yaml`. A new file is not picked up just because it sits in the folder. Add an `include` for it.
+```text
+UPDATE SUMMARY
+Run:                          8
+Previously run:               0
+Filtered out:                 0
+Total change sets:            8
+Liquibase: Update has been successful. Rows affected: 2
+```
 
-| Team | File | Id | What it does |
-| --- | --- | --- | --- |
-| A | `2026/jan/V1.1__create_users_table.sql` | `V1.1` | `app.users` |
-| A | `2026/jan/V1.2__add_indexes.sql` | `V1.2` | index on `app.users (full_name)` |
-| A | `2026/feb/V2.1__update_user_schema.sql` | `V2.1` | `status` column on `app.users` |
-| B | `2026/jan/V1.1__create_orders_table.sql` | `V1.1` | `app.orders` |
-| B | `2026/feb/V1.2__add_payment_status.sql` | `V1.2` | `payment_status` column on `app.orders` |
+`Rows affected: 2` is the seed insert, not the DDL. The deployment id of that first run was `3204390650`. A later `update`, with nothing new, printed `Database is up to date, no changesets to execute` and `Run: 0`.
 
-Team B does not reference team A's tables, so either changelog can be applied on its own.
+The changesets, in order:
+
+| Order | Id | What it does |
+| --- | --- | --- |
+| 1 | `001-create-customers` | `app.customers` |
+| 2 | `002-create-orders` | `app.orders`, with a foreign key to customers |
+| 3 | `002b-orders-customer-idx` | index on `app.orders(customer_id)` |
+| 4 | `003-seed-customers` | Ada Lovelace and Grace Hopper |
+| 5 | `004-add-customer-status` | `status varchar(20) NOT NULL DEFAULT 'active'` |
+| 6 | `005-tag-v1_0_0` | tag `v1.0.0`, with `keepTagOnRollback: true` |
+| 7 | `006-create-payments` | `app.payments` |
+| 8 | `007-customer-count-fn` | function `app.customer_count()`, `splitStatements:false` |
+
+PostgreSQL does not index the referencing column of a foreign key, so the index is its own changeset. The function body contains a semicolon, so that changeset sets `splitStatements:false`. Without that, Liquibase would split the function on the semicolon and send an incomplete statement.
 
 ## 7. Add the next changeset
 
-1. Add a file under that team's month directory, for example `service-team-a/db/2026/mar/V3.1__add_user_phone.sql`. The first line must be `--liquibase formatted sql`.
+1. Add `changelog/changes/008-something.sql`. The first line must be `--liquibase formatted sql`.
 2. Give it a new id. Do not reuse an id in the same file with the same author.
 3. Write the SQL, a `--comment`, and a `--rollback`.
-4. Include the file at the bottom of that team's `db/root-changelog.yaml`.
-5. Run `make update-sql TEAM=service-team-a`, read it, then `make update TEAM=service-team-a`.
+4. Include the file at the bottom of `changelog/db.changelog-master.yaml`.
+5. Run `make update-sql`, read it, then `make update`.
 
-Do not edit a changeset that has already been applied. Do not rename or move the file. The path is part of the identity stored in that team's changelog table. Do not reorder includes.
+Do not edit a changeset that has already been applied. Do not rename or move the file. The path is part of the identity stored in `databasechangelog`. Do not reorder includes.
+
+Example shape:
+
+```sql
+--liquibase formatted sql
+
+--changeset praveen:008-example
+--comment: Why this change exists.
+ALTER TABLE app.customers
+    ADD COLUMN phone varchar(30);
+--rollback ALTER TABLE app.customers DROP COLUMN phone;
+```
 
 ## 8. Look at the result
 
 ```bash
 ./scripts/psql.sh super -f /db/inspect/changelog.sql
+./scripts/psql.sh app -c "SELECT id, full_name, status FROM app.customers;"
 ```
 
-That lists `serviceteama_databasechangelog` and `serviceteamb_databasechangelog` wherever they were created.
+`app_user` can select and insert. This session inserted one order as `app_user` (`amount_cents` 2500 for Ada). That row is application data. It is not a changeset.
 
 ```bash
 ./scripts/psql.sh app -c "CREATE TABLE app.hacker (id int);"
@@ -177,4 +198,6 @@ That lists `serviceteama_databasechangelog` and `serviceteamb_databasechangelog`
 
 That fails with `permission denied for schema app`.
 
-`appdb` still contains the objects from the first single changelog, including `app.orders`. Team B cannot create `app.orders` there until you recreate the volume with `make reset`. The team files were applied on database `teamdb` in the same PostgreSQL instance.
+## 9. Side cases
+
+`make demos` runs the cases that are not part of the main changelog: a changeset that fails, a changeset with no rollback, a `context:dev` changeset, a checksum mismatch, the `tag` command, and a stuck lock. It puts the main changelog back the way it found it. Run it only when `make status` says the main changelog is up to date.
