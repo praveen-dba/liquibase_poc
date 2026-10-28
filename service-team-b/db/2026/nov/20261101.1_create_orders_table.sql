@@ -1,6 +1,6 @@
 --liquibase formatted sql
 
---changeset service-team-b:20260101.1
+--changeset service-team-b:20261101.1
 --comment: Create orders. This changelog does not depend on service-team-a.
 CREATE TABLE app.orders (
     id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
