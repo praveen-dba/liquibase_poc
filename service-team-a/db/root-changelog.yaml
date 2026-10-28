@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - include:
+      file: 2026/jan/V1.1__create_users_table.sql
+      relativeToChangelogFile: true
+  - include:
+      file: 2026/jan/V1.2__add_indexes.sql
+      relativeToChangelogFile: true
+  - include:
+      file: 2026/feb/V2.1__update_user_schema.sql
+      relativeToChangelogFile: true
