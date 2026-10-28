@@ -1,0 +1,4 @@
+databaseChangeLog:
+  - include:
+      file: 2026/nov/20261101.1_create_transactions_table.sql
+      relativeToChangelogFile: true

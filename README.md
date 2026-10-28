@@ -1,86 +1,114 @@
-# Liquibase PostgreSQL POC
+# Liquibase POC
 
-Local Liquibase Community setup for PostgreSQL. The changelog in this repo is the source of truth. Liquibase applies it, records what ran, and can roll it back.
+Each team keeps a changelog for MySQL, MongoDB, and PostgreSQL. Liquibase applies the pending changesets and records them in that team and engine's own tracking table.
 
-This was installed and exercised on this Mac on 28 October 2026.
+You run this against the MySQL, MongoDB, and PostgreSQL instances already on your machine. Jenkins calls the same `scripts/lb.sh`.
 
 | Piece | Version |
 | --- | --- |
 | Liquibase Community | 5.0.4 |
-| Java | OpenJDK 21.0.13 (Homebrew `openjdk@21`) |
-| PostgreSQL | 16.11, image `postgres:16.11` (`postgres@sha256:468e1f126ca5af849799cda06ac9b03d8090aae9fa5163408b3e8da44fad0702`) |
-| PostgreSQL JDBC driver | 42.7.14, installed with Liquibase Package Manager |
-| Database | `appdb` on `localhost:5432` |
-
-## Documents
-
-- [What Liquibase is, and why use it](docs/01-what-is-liquibase.md)
-- [PostgreSQL local setup](docs/02-postgresql-local-setup.md)
-- [Tracking tables, permissions, versioning, and rollback](docs/03-how-it-works.md)
+| Java | 17 or newer. This Mac uses Homebrew OpenJDK 21 |
+| PostgreSQL JDBC | 42.7.14 |
+| MySQL Connector/J | 8.0.30 |
+| MongoDB extension | liquibase-mongodb 5.0.3, mongo-java-driver 3.12.14 |
 
 ## Layout
 
-Each team has its own changelog and its own Liquibase tracking tables. They share one PostgreSQL database.
+A file in November 2026 is named `202611<day>.<sequence>_<description>.sql`. The sequence starts at `1` for that day. December uses `202612`.
 
 ```text
 service-team-a/
 ├── liquibase.properties
 └── db/
-    ├── root-changelog.yaml
-    └── 2026/
-        ├── nov/
-        │   ├── 20261101.1_create_users_table.sql
-        │   └── 20261101.2_add_indexes.sql
-        └── dec/
-            └── 20261201.1_update_user_schema.sql
+    ├── mysql/
+    │   ├── liquibase.properties
+    │   ├── root-changelog.yaml
+    │   └── 2026/
+    │       ├── nov/
+    │       │   ├── 20261101.1_create_users_table.sql
+    │       │   └── 20261101.2_add_indexes.sql
+    │       └── dec/
+    │           └── 20261201.1_update_user_schema.sql
+    ├── mongodb/
+    │   ├── liquibase.properties
+    │   ├── root-changelog.yaml
+    │   └── 2026/
+    │       ├── nov/
+    │       │   └── 20261101.1_create_user_profiles.json
+    │       └── dec/
+        │           └── 20261201.1_update_indexes.json
+    └── postgres/
+        ├── liquibase.properties
+        ├── root-changelog.yaml
+        └── 2026/
+            ├── nov/
+            │   └── 20261101.1_create_audit_table.sql
+            └── dec/
+                └── 20261201.1_add_partitions.sql
 service-team-b/
 ├── liquibase.properties
 └── db/
-    ├── root-changelog.yaml
-    └── 2026/
-        ├── nov/
-        │   └── 20261101.1_create_orders_table.sql
-        └── dec/
-            └── 20261201.1_add_payment_status.sql
-db/init/            roles and schemas created when the volume is first initialized
-db/inspect/         queries for privileges and the tracking tables
-scripts/            start, stop, Liquibase, and psql
-liquibase.json      JDBC driver version installed into liquibase_libs/
-docker-compose.yml  PostgreSQL 16.11
+    ├── mysql/
+    │   ├── liquibase.properties
+    │   ├── root-changelog.yaml
+    │   └── 2026/nov/20261101.1_create_orders_table.sql
+    ├── mongodb/
+    │   ├── liquibase.properties
+    │   ├── root-changelog.yaml
+    │   └── 2026/nov/20261101.1_create_orders_collection.json
+    └── postgres/
+        ├── liquibase.properties
+        ├── root-changelog.yaml
+        └── 2026/nov/20261101.1_create_transactions_table.sql
 ```
 
-`service-team-a/liquibase.properties` records changes in `serviceteama_databasechangelog` and takes its lock in `serviceteama_databasechangelock`. Team B uses `serviceteamb_databasechangelog` and `serviceteamb_databasechangelock`. One team's `update` does not mark the other team's changesets as run.
+`liquibase_libs/`, `.env`, and `target/` stay on the machine that runs Liquibase. They are not part of the commit.
 
-`liquibase_libs/`, `.env`, and `target/` are local. They are not part of the commit.
+## Local run
 
-## Run it
-
-Docker Desktop has to be running.
+Install once:
 
 ```bash
-make up
-make update TEAM=service-team-a
-make update TEAM=service-team-b
-make history TEAM=service-team-a
+brew install openjdk@21
+brew install --cask liquibase-community
+cp .env.example .env   # then set the URL, username, and password for each engine you will use
+make drivers
 ```
 
-`make update` with no `TEAM` applies service-team-a. `make update-all` applies team A, then team B.
+The database has to exist before `update`. For PostgreSQL, create the schema Liquibase will use (`app` unless you set `SCHEMA`). For MySQL, create the database of the same name. For MongoDB, the database in `MONGODB_URL` is enough.
 
 ```bash
-make status TEAM=service-team-b
-make update-sql TEAM=service-team-a
-make validate TEAM=service-team-a
-make rollback-count TEAM=service-team-b N=1
-make release-locks TEAM=service-team-a
-make psql ROLE=liquibase
-make down
-make reset
+make update-sql TEAM=service-team-a ENGINE=postgres
+make update TEAM=service-team-a ENGINE=postgres
+make status TEAM=service-team-a ENGINE=mysql
+make history TEAM=service-team-b ENGINE=mongodb
+make validate TEAM=service-team-a ENGINE=postgres
+make rollback-count TEAM=service-team-b ENGINE=mysql N=1
+make release-locks TEAM=service-team-a ENGINE=postgres
 ```
 
-The tracking tables are created in schema `app`, because that is the first schema on `liquibase_admin`'s search path and the team properties file sets only the table name. On a clean database this produced `app.serviceteama_databasechangelog` and `app.serviceteamb_databasechangelog`.
+`SCHEMA` changes the MySQL database and the PostgreSQL schema together. The default is `app`.
 
-`appdb` still has the tables from the first changelog, including `app.orders`. Team B's `20261101.1_create_orders_table.sql` will fail there until the volume is recreated with `make reset`. The team changelogs were applied successfully on a separate database, `teamdb`, in the same PostgreSQL 16.11 instance.
+```bash
+SCHEMA=billing make update TEAM=service-team-a ENGINE=postgres
+```
 
-The Makefile calls `scripts/lb.sh`, which sets `JAVA_HOME` and the database URL. A bare `liquibase` in a new terminal will not find Java until `JAVA_HOME` points at Homebrew OpenJDK 21.
+MongoDB ignores `SCHEMA`. The connection URL selects the database. Leave `MONGODB_USERNAME` empty when the local server has no authentication.
 
-Passwords live in `.env`, copied from `.env.example` on the first `make up`. They are local-only values.
+## Jenkins
+
+`Jenkinsfile` takes `TEAM`, `ENGINE`, `COMMAND`, `ROLLBACK_COUNT`, and `SCHEMA`. The migrate stage runs `scripts/lb.sh`. The job must provide:
+
+- `LIQUIBASE_COMMAND_URL`
+- `LIQUIBASE_COMMAND_USERNAME`
+- `LIQUIBASE_COMMAND_PASSWORD`
+
+Those win over `.env` when both are present. The agent needs Java 17+ and Liquibase 5 on `PATH`. The first run installs the jars from `liquibase.json` into `liquibase_libs/`.
+
+A changeset records `logicalFilePath`, so the Jenkins workspace directory is not part of the identity stored in the tracking table.
+
+## Documents
+
+- [What Liquibase is, and why use it](docs/01-what-is-liquibase.md)
+- [Local setup and Jenkins](docs/02-postgresql-local-setup.md)
+- [Tracking tables, permissions, versioning, and rollback](docs/03-how-it-works.md)

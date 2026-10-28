@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - include:
+      file: 2026/nov/20261101.1_create_user_profiles.json
+      relativeToChangelogFile: true
+  - include:
+      file: 2026/dec/20261201.1_update_indexes.json
+      relativeToChangelogFile: true

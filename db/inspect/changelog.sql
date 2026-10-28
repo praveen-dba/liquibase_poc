@@ -6,10 +6,10 @@ FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind = 'r'
   AND c.relname IN (
-      'serviceteama_databasechangelog',
-      'serviceteama_databasechangelock',
-      'serviceteamb_databasechangelog',
-      'serviceteamb_databasechangelock'
+      'serviceteama_postgres_databasechangelog',
+      'serviceteama_postgres_databasechangelock',
+      'serviceteamb_postgres_databasechangelog',
+      'serviceteamb_postgres_databasechangelock'
   )
 ORDER BY 1, 2;
 
@@ -21,7 +21,7 @@ SELECT format(
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind = 'r'
-  AND c.relname = 'serviceteama_databasechangelog'
+  AND c.relname = 'serviceteama_postgres_databasechangelog'
 \gexec
 
 \echo
@@ -32,5 +32,5 @@ SELECT format(
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind = 'r'
-  AND c.relname = 'serviceteamb_databasechangelog'
+  AND c.relname = 'serviceteamb_postgres_databasechangelog'
 \gexec

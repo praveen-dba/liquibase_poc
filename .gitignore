@@ -4,3 +4,4 @@ target/
 *.log
 liquibase_libs/
 docs/evidence/
+databasechangelog*.csv

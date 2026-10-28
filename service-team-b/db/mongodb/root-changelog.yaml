@@ -1,0 +1,4 @@
+databaseChangeLog:
+  - include:
+      file: 2026/nov/20261101.1_create_orders_collection.json
+      relativeToChangelogFile: true

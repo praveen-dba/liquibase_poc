@@ -1,182 +1,119 @@
-# PostgreSQL local setup
+# Local setup
 
-This is the setup that is running on this Mac. PostgreSQL is the Docker image `postgres:16.11`. Liquibase Community 5.0.4 runs on the host and connects to `localhost:5432`.
+Liquibase Community 5.0.4 runs on the machine that applies the changelog. It connects to MySQL, MongoDB, or PostgreSQL that is already running. Jenkins uses the same script and the same properties files.
 
-Homebrew's `postgresql@16` formula is 16.15, so it was not used. Homebrew's `liquibase` formula is 4.33.0. Community 5 is the cask `liquibase-community`.
+Homebrew's `liquibase` formula is 4.33.0. Community 5 is the cask `liquibase-community`.
 
 ## 1. Java and Liquibase
 
-Liquibase 5 requires Java 17 or newer. This machine uses Homebrew OpenJDK 21.0.13.
+Liquibase 5 requires Java 17 or newer.
 
 ```bash
 brew install openjdk@21
 brew install --cask liquibase-community
 ```
 
-OpenJDK 21 is keg-only. It is not on the default `PATH`. The scripts in this repo set:
+OpenJDK 21 is keg-only on this Mac. `scripts/lb.sh` sets `JAVA_HOME` to the Homebrew OpenJDK 21 home when `JAVA_HOME` is empty and that install exists. A Jenkins agent that already has Java 17+ on `PATH` can leave `JAVA_HOME` to the agent.
 
 ```bash
-export JAVA_HOME="/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
-export PATH="$JAVA_HOME/bin:$PATH"
-```
-
-Check the install:
-
-```bash
-"$JAVA_HOME/bin/java" -version
 liquibase --version
 ```
 
-`liquibase --version` on this machine printed `Liquibase Version: 5.0.4` and `Java Home` under the OpenJDK 21 cellar. The first run also downloaded the Liquibase Package Manager into the Liquibase install directory.
+## 2. Drivers
 
-## 2. PostgreSQL JDBC driver
+Liquibase 5 does not ship database drivers. `liquibase.json` pins:
 
-Liquibase 5 does not ship database drivers. From the repo root:
-
-```bash
-/opt/homebrew/Caskroom/liquibase-community/5.0.4/lpm add postgresql
-```
-
-That installed `postgresql-42.7.14.jar` into `liquibase_libs/` and wrote `liquibase.json`. Liquibase adds every jar in `liquibase_libs/` when you run it from the repo root. There is no `driver:` property and no copy into `/usr/bin/internal/lib`.
-
-`make up` runs `lpm install` if that jar is missing, using the version pinned in `liquibase.json`. The jar itself stays local.
-
-## 3. PostgreSQL 16.11
-
-Docker Desktop has to be running.
+| Package | Version |
+| --- | --- |
+| postgresql | 42.7.14 |
+| mysql | 8.0.30 |
+| mongodb | 3.12.14 |
+| liquibase-mongodb | 5.0.3 |
 
 ```bash
-cp .env.example .env   # make up does this if .env is absent
-make up
+make drivers
 ```
 
-`make up` starts `docker-compose.yml` and waits until the health check passes. The container is `liquibase_poc_postgres`. The server log from the first boot was:
+That runs `lpm install` when a jar is missing and writes the jars to `liquibase_libs/`. Liquibase loads that directory when the working directory is the repo root. `scripts/lb.sh` changes to the repo root before it starts Liquibase, so a Jenkins step can call the script from any directory inside the workspace.
 
-```text
-starting PostgreSQL 16.11 (Debian 16.11-1.pgdg13+1) on aarch64-unknown-linux-gnu
-```
+## 3. Connection
 
-Confirm it from the client inside the container:
+Copy `.env.example` to `.env` and set the URL, username, and password for each engine you will run. `.env` is gitignored.
 
-```bash
-make psql ROLE=super
-```
+| Engine | Variable | What it points at |
+| --- | --- | --- |
+| PostgreSQL | `POSTGRES_URL` | JDBC database, for example `jdbc:postgresql://localhost:5432/app` |
+| MySQL | `MYSQL_URL` | JDBC database, for example `jdbc:mysql://localhost:3306/app` |
+| MongoDB | `MONGODB_URL` | Database in the URL, for example `mongodb://localhost:27017/app` |
+
+Jenkins leaves `.env` unused. The job exports `LIQUIBASE_COMMAND_URL`, `LIQUIBASE_COMMAND_USERNAME`, and `LIQUIBASE_COMMAND_PASSWORD` for the one engine that build is deploying. Those values override `.env`.
+
+Create the target before the first `update`:
 
 ```sql
-SHOW server_version;
+-- PostgreSQL, connected to the database in POSTGRES_URL
+CREATE SCHEMA IF NOT EXISTS app;
+
+-- MySQL
+CREATE DATABASE IF NOT EXISTS app;
 ```
 
-```text
-16.11 (Debian 16.11-1.pgdg13+1)
-```
+MongoDB creates the database named in the URL on the first write. Leave `MONGODB_USERNAME` empty when that server has no authentication.
 
-Port `5432` on the host is published to `5432` in the container. Nothing else was listening on `5432` when this was set up. Change `POSTGRES_PORT` in `.env` if that port is taken, then recreate the container.
+`SCHEMA` defaults to `app`. For PostgreSQL it is the schema. For MySQL it is the database, and it should match the database in `MYSQL_URL`. Pass `SCHEMA=billing` on the make command or as the Jenkins parameter when the name differs. MongoDB ignores it.
 
-The data volume is `liquibase_poc_pgdata`. `make down` stops the container and keeps the volume. `make reset` deletes the volume, so the init script runs again and the tracking tables are gone.
-
-## 4. Roles created on first boot
-
-`db/init/01-init-roles.sh` runs once, as the `postgres` superuser, against database `appdb`. A later container start does not run it again.
-
-| Role | Password in `.env.example` | What it is for |
-| --- | --- | --- |
-| `postgres` | `postgres_local_only` | Superuser. Creates roles and schemas. Not used by Liquibase. |
-| `liquibase_admin` | `liquibase_local_only` | Runs Liquibase. Owns schemas `liquibase` and `app`. |
-| `app_user` | `app_user_local_only` | Application runtime. DML on `app` tables only. |
-| `liquibase_limited` | `limited_local_only` | Permission demo. `CONNECT` and nothing else. |
-
-The script also:
-
-- creates schemas `liquibase` and `app`, owned by `liquibase_admin`
-- revokes `CONNECT` on `appdb` from `PUBLIC`, then grants `CONNECT` to the three roles
-- grants `TEMPORARY` on `appdb` to `liquibase_admin`
-- grants `USAGE` on schema `app` to `app_user`
-- sets default privileges so tables and sequences later created by `liquibase_admin` in `app` are usable by `app_user`
-- does **not** grant `CREATE` on the database, so `liquibase_admin` cannot create another schema
-
-Inspect what was created:
+## 4. Apply one engine
 
 ```bash
-./scripts/psql.sh super -f /db/inspect/privileges.sql
+make update-sql TEAM=service-team-a ENGINE=postgres
+make update TEAM=service-team-a ENGINE=postgres
+make history TEAM=service-team-a ENGINE=postgres
 ```
 
-## 5. Liquibase connection
+`ENGINE` is `mysql`, `postgres`, or `mongodb`. `TEAM` is `service-team-a` or `service-team-b`. The script passes that engine's `liquibase.properties` and an absolute `--search-path`, so the changelog resolves the same way on a laptop and on a Jenkins agent.
 
-Each team has its own properties file. `service-team-a/liquibase.properties`:
+MongoDB `update-sql` needs the server running. The Community extension reads collection metadata before it prints the statements. `validate` still checks the JSON without applying it. MySQL and PostgreSQL `update-sql` can run against Liquibase's offline URL.
 
-```properties
-changeLogFile=db/root-changelog.yaml
-databaseChangeLogTableName=serviceteama_databasechangelog
-databaseChangeLogLockTableName=serviceteama_databasechangelock
-```
+A file in November 2026 is named `202611<day>.<sequence>_<description>.sql`. A second change on the same day uses `.2`. December uses `202612`.
 
-`service-team-b/liquibase.properties`:
-
-```properties
-changeLogFile=db/root-changelog.yaml
-databaseChangeLogTableName=serviceteamb_databasechangelog
-databaseChangeLogLockTableName=serviceteamb_databasechangelock
-```
-
-`scripts/lb.sh` runs from the repo root so the JDBC jar in `liquibase_libs/` is found, and passes `--defaults-file` plus `--search-path` for the team you name. The changelog path in the properties file is relative to that team directory.
-
-`scripts/common.sh` adds the connection from `.env`:
-
-```text
-jdbc:postgresql://localhost:5432/appdb
-username liquibase_admin
-```
-
-Do not export `LIQUIBASE_USERNAME` or `LIQUIBASE_PASSWORD`. Liquibase 5 warns about unknown `LIQUIBASE_*` variables. The script uses `LIQUIBASE_COMMAND_USERNAME` and `LIQUIBASE_COMMAND_PASSWORD`. The `.env` keys are `MIGRATION_USERNAME` and `MIGRATION_PASSWORD`.
-
-The properties file does not set a schema. Liquibase creates the tracking tables in the first schema on `liquibase_admin`'s search path, which the init script sets to `app`. The SQL changesets still qualify application objects with `app.`.
-
-## 6. Apply a team's changelog
-
-```bash
-make update TEAM=service-team-a
-make update TEAM=service-team-b
-make history TEAM=service-team-a
-```
-
-On a clean database, team A runs 3 changesets and team B runs 2. A later `update` for a team that is already applied prints `Database is up to date, no changesets to execute`.
-
-Months are included in calendar order from `db/root-changelog.yaml`. A new file is not picked up just because it sits in the folder. Add an `include` for it.
-
-A file in November 2026 is named `202611<day>.<sequence>_<description>.sql`. The sequence starts at `1` for that day. A second change on the same day is `.2`.
-
-| Team | File | Id | What it does |
+| Team | Engine | File | Id |
 | --- | --- | --- | --- |
-| A | `2026/nov/20261101.1_create_users_table.sql` | `20261101.1` | `app.users` |
-| A | `2026/nov/20261101.2_add_indexes.sql` | `20261101.2` | index on `app.users (full_name)` |
-| A | `2026/dec/20261201.1_update_user_schema.sql` | `20261201.1` | `status` column on `app.users` |
-| B | `2026/nov/20261101.1_create_orders_table.sql` | `20261101.1` | `app.orders` |
-| B | `2026/dec/20261201.1_add_payment_status.sql` | `20261201.1` | `payment_status` column on `app.orders` |
+| A | mysql | `2026/nov/20261101.1_create_users_table.sql` | `20261101.1` |
+| A | mysql | `2026/nov/20261101.2_add_indexes.sql` | `20261101.2` |
+| A | mysql | `2026/dec/20261201.1_update_user_schema.sql` | `20261201.1` |
+| A | mongodb | `2026/nov/20261101.1_create_user_profiles.json` | `20261101.1` |
+| A | mongodb | `2026/dec/20261201.1_update_indexes.json` | `20261201.1` |
+| A | postgres | `2026/nov/20261101.1_create_audit_table.sql` | `20261101.1` |
+| A | postgres | `2026/dec/20261201.1_add_partitions.sql` | `20261201.1` |
+| B | mysql | `2026/nov/20261101.1_create_orders_table.sql` | `20261101.1` |
+| B | mongodb | `2026/nov/20261101.1_create_orders_collection.json` | `20261101.1` |
+| B | postgres | `2026/nov/20261101.1_create_transactions_table.sql` | `20261101.1` |
 
-Team B does not reference team A's tables, so either changelog can be applied on its own.
+Each changeset sets `logicalFilePath` to its path from the repo root. Liquibase stores that path. A different checkout directory in Jenkins does not make the changeset look new.
 
-## 7. Add the next changeset
+## 5. Add the next changeset
 
-1. Add a file under that team's month directory, for example `service-team-a/db/2026/dec/20261215.1_add_user_phone.sql`. The first line must be `--liquibase formatted sql`.
-2. Give it a new id. Do not reuse an id in the same file with the same author.
-3. Write the SQL, a `--comment`, and a `--rollback`.
-4. Include the file at the bottom of that team's `db/root-changelog.yaml`.
-5. Run `make update-sql TEAM=service-team-a`, read it, then `make update TEAM=service-team-a`.
+1. Add a file under that team's engine and month, for example `service-team-a/db/postgres/2026/dec/20261215.1_add_user_phone.sql`. Formatted SQL starts with `--liquibase formatted sql`. A MongoDB changeset is a JSON changelog. The Community MongoDB extension parses JSON.
+2. Give it a new id, `20261215.1`, and the same `logicalFilePath` as the file's path from the repo root. Put the author as `service-team-a` or `service-team-b`.
+3. Write the change, a comment, and a rollback. In SQL, qualify objects with `${schemaName}`.
+4. Include the file at the bottom of that engine's `root-changelog.yaml`.
+5. Run `make update-sql TEAM=service-team-a ENGINE=postgres`, read it, then `make update`.
 
-Do not edit a changeset that has already been applied. Do not rename or move the file. The path is part of the identity stored in that team's changelog table. Do not reorder includes.
+Do not edit a changeset that has already been applied. Do not rename or move the file. `logicalFilePath` is part of the identity stored in that engine's tracking table. Do not reorder includes.
 
-## 8. Look at the result
+## 6. Jenkins
 
-```bash
-./scripts/psql.sh super -f /db/inspect/changelog.sql
-```
+`Jenkinsfile` parameters are `TEAM`, `ENGINE`, `COMMAND`, `ROLLBACK_COUNT`, and `SCHEMA`. `COMMAND` is one of `validate`, `status`, `update-sql`, `update`, `history`, `release-locks`, or `rollback-count`.
 
-That lists `serviceteama_databasechangelog` and `serviceteamb_databasechangelog` wherever they were created.
+The migrate stage checks that `LIQUIBASE_COMMAND_URL` is set, then runs `./scripts/lb.sh`. Bind the URL, username, and password from Jenkins credentials on the job. Point the URL at the database for the selected engine. The properties files in git hold the changelog path and the tracking-table names, so the job does not edit them.
 
-```bash
-./scripts/psql.sh app -c "CREATE TABLE app.hacker (id int);"
-```
+Tracking tables for PostgreSQL:
 
-That fails with `permission denied for schema app`.
+| Team | Changelog | Lock |
+| --- | --- | --- |
+| A | `serviceteama_postgres_databasechangelog` | `serviceteama_postgres_databasechangelock` |
+| B | `serviceteamb_postgres_databasechangelog` | `serviceteamb_postgres_databasechangelock` |
 
-`appdb` still contains the objects from the first single changelog, including `app.orders`. Team B cannot create `app.orders` there until you recreate the volume with `make reset`. The team files were applied on database `teamdb` in the same PostgreSQL instance.
+MySQL uses `serviceteama_mysql_databasechangelog` and `serviceteamb_mysql_databasechangelog`. MongoDB uses `serviceteama_mongodb_databasechangelog` and `serviceteamb_mongodb_databasechangelog` as collection names in the database from the URL.
+
+`db/inspect/changelog.sql` lists the PostgreSQL tracking tables. Run it with the local `psql` against the database in `POSTGRES_URL`.

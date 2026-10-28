@@ -1,0 +1,26 @@
+{
+  "databaseChangeLog": [
+    {
+      "changeSet": {
+        "id": "20261101.1",
+        "logicalFilePath": "service-team-b/db/mongodb/2026/nov/20261101.1_create_orders_collection.json",
+        "author": "service-team-b",
+        "comment": "Create the orders collection.",
+        "changes": [
+          {
+            "createCollection": {
+              "collectionName": "orders"
+            }
+          }
+        ],
+        "rollback": [
+          {
+            "dropCollection": {
+              "collectionName": "orders"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -2,6 +2,3 @@ databaseChangeLog:
   - include:
       file: 2026/nov/20261101.1_create_orders_table.sql
       relativeToChangelogFile: true
-  - include:
-      file: 2026/dec/20261201.1_add_payment_status.sql
-      relativeToChangelogFile: true

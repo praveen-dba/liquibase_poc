@@ -1,0 +1,29 @@
+{
+  "databaseChangeLog": [
+    {
+      "changeSet": {
+        "id": "20261201.1",
+        "author": "service-team-a",
+        "logicalFilePath": "service-team-a/db/mongodb/2026/dec/20261201.1_update_indexes.json",
+        "comment": "Unique index on user_profiles.email.",
+        "changes": [
+          {
+            "createIndex": {
+              "collectionName": "user_profiles",
+              "keys": "{ email: 1 }",
+              "options": "{ unique: true, name: \"user_profiles_email_uidx\" }"
+            }
+          }
+        ],
+        "rollback": [
+          {
+            "dropIndex": {
+              "collectionName": "user_profiles",
+              "keys": "{ email: 1 }"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

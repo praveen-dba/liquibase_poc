@@ -4,13 +4,13 @@ Liquibase is an open-source tool that applies database changes in a fixed order 
 
 A changelog is an ordered list of changesets. A changeset is one change, with an id, an author, and the file it lives in. Those three values are its identity. Liquibase stores that identity in a tracking table after the change succeeds. The next run skips it.
 
-This POC uses Liquibase Community 5.0.4 against PostgreSQL 16.11. The older notes for MySQL and MongoDB were written around Liquibase 4. The workflow here is the Community 5 workflow: Java 17 or newer, the PostgreSQL driver installed with `lpm`, and a changelog we write by hand and only append to.
+This POC uses Liquibase Community 5.0.4 against a local MySQL, MongoDB, or PostgreSQL. Jenkins runs the same `scripts/lb.sh` the laptop uses. The workflow is the Community 5 workflow: Java 17 or newer, the drivers installed with `lpm`, and a changelog we write by hand and only append to.
 
 ## What you gain
 
 **The same changes run in the same order everywhere.** Development, test, and production each have their own database. They share one changelog. `liquibase update` applies whatever that database has not recorded yet.
 
-**The database remembers what ran.** After a successful update, the tracking table has one row per changeset: id, author, filename, checksum, comment, the Liquibase version that ran it, and a deployment id shared by every changeset in that run. This repo gives each team its own table, `serviceteama_databasechangelog` and `serviceteamb_databasechangelog`, so the teams can share one database without sharing one history. You do not have to infer the schema version from a filename or from whoever last logged into the server.
+**The database remembers what ran.** After a successful update, the tracking table has one row per changeset: id, author, filename, checksum, comment, the Liquibase version that ran it, and a deployment id shared by every changeset in that run. This repo gives each team and each engine its own tracking table, for example `serviceteama_postgres_databasechangelog` and `serviceteamb_mysql_databasechangelog`, so one team's history stays separate from the other's and a MySQL run stays separate from PostgreSQL and MongoDB. You do not have to infer the schema version from a filename or from whoever last logged into the server.
 
 **A second deploy is a no-op.** On this database, the first `update` ran 8 changesets. The next `update` reported `Run: 0`, `Previously run: 8`, and `Database is up to date, no changesets to execute`.
 
@@ -42,12 +42,12 @@ Rollback undoes changesets whose rollback you wrote. It is not a backup. An `INS
 
 Community 5.0.4 does not have a command to roll back one changeset by id. `rollback-one-changeset` is not a command in this build. The Community commands are `rollback-count`, `rollback --tag`, and `rollback-to-date`.
 
-`generate-changelog` can snapshot a database that already exists. It is a starting point for adoption, not the changelog you keep editing. This repo keeps the hand-written files under each team's `db/2026/` directories.
+`generate-changelog` can snapshot a database that already exists. It is a starting point for adoption, not the changelog you keep editing. This repo keeps the hand-written files under each team's `db/<engine>/2026/` directories.
 
 ## How a run works
 
-1. Liquibase connects as `liquibase_admin`.
-2. It creates that team's changelog table and lock table if they are missing. The names come from the team's `liquibase.properties`.
-3. It reads that team's `db/root-changelog.yaml` and compares it with that team's tracking table.
-4. `update` locks the lock row, runs each missing changeset, inserts a tracking row in the same transaction, then releases the lock.
-5. A later environment runs the same files. Changesets already recorded there are skipped. New ones at the bottom of the changelog are applied.
+1. Liquibase connects with `LIQUIBASE_COMMAND_URL` and the username from the environment. Locally those values come from `.env`. Jenkins exports the same variables for the database it is deploying.
+2. It creates that team's changelog table and lock table for the selected engine if they are missing. The names come from `db/<engine>/liquibase.properties`.
+3. It reads that engine's `root-changelog.yaml` and compares it with that tracking table.
+4. `update` locks the lock row, runs each missing changeset, records it, then releases the lock.
+5. A later environment runs the same files. Changesets already recorded there are skipped. New ones at the bottom of the changelog are applied. The stored filename is `logicalFilePath`, so the Jenkins workspace path is not part of the identity.

@@ -1,0 +1,26 @@
+{
+  "databaseChangeLog": [
+    {
+      "changeSet": {
+        "id": "20261101.1",
+        "logicalFilePath": "service-team-a/db/mongodb/2026/nov/20261101.1_create_user_profiles.json",
+        "author": "service-team-a",
+        "comment": "Create the user_profiles collection.",
+        "changes": [
+          {
+            "createCollection": {
+              "collectionName": "user_profiles"
+            }
+          }
+        ],
+        "rollback": [
+          {
+            "dropCollection": {
+              "collectionName": "user_profiles"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

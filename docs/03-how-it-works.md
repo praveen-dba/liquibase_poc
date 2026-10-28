@@ -1,10 +1,10 @@
 # How it works on PostgreSQL
 
-The changelog in the repo is now split by team. `service-team-a` writes `serviceteama_databasechangelog` and `service-team-b` writes `serviceteamb_databasechangelog`. The notes below are from the first run on `appdb`, when there was one changelog and the default table names. The mechanics are the same. The table names and the changeset files are the ones in each team's directory.
+The notes below are from the first PostgreSQL run, when there was one changelog and the default tracking-table names. The current tree gives each team a MySQL changelog, a MongoDB changelog, and a PostgreSQL changelog. PostgreSQL tracking tables are now `serviceteama_postgres_databasechangelog` and `serviceteamb_postgres_databasechangelog`. Run them with `make update TEAM=service-team-a ENGINE=postgres` against the local server. The mechanics below are unchanged.
 
-Everything below was run against `appdb` on PostgreSQL 16.11 with Liquibase Community 5.0.4. After the rollback tests, the database was updated forward again. `make status` is clean: 8 changesets applied, tag `v1.0.0` present, lock released.
+Everything below was run against `appdb` on PostgreSQL 16.11 with Liquibase Community 5.0.4. After the rollback tests, the database was updated forward again. That run was clean: 8 changesets applied, tag `v1.0.0` present, lock released.
 
-A fresh `make reset && make update` applies the same 8 changesets in one deployment. The deployment ids below are from this machine after the rollbacks, so the later rows have newer ids than the first five.
+The deployment ids below are from this machine after the rollbacks, so the later rows have newer ids than the first five.
 
 ## Where the tracking tables are
 

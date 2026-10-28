@@ -2,6 +2,15 @@
   "dependencies": [
     {
       "postgresql": "42.7.14"
+    },
+    {
+      "mysql": "8.0.30"
+    },
+    {
+      "mongodb": "3.12.14"
+    },
+    {
+      "liquibase-mongodb": "5.0.3"
     }
   ]
 }
